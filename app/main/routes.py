@@ -8,7 +8,7 @@ from langdetect import detect, LangDetectException
 from app import db
 from app.main.forms import EditProfileForm, EmptyForm, PostForm, SearchForm, \
     MessageForm
-from app.models import User, Post, Message, Notification
+from app.models import User, Post, Message, Notification, Rating
 from app.translate import translate
 from app.main import bp
 
@@ -239,3 +239,46 @@ def notifications():
         'data': n.get_data(),
         'timestamp': n.timestamp
     } for n in notifications]
+
+@bp.route('/like/<int:post_id>', methods=['POST'])
+@login_required
+def like_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if not post.is_liked_by(current_user):
+        rating = Rating(user_id=current_user.id, post_id=post_id)
+        db.session.add(rating)
+        db.session.commit()
+    else:
+        flash('geliked')
+    
+    # Auf der gleichen Seite bleiben
+    return redirect(request.referrer or url_for('main.index'))
+
+
+@bp.route('/unlike/<int:post_id>', methods=['POST'])
+@login_required
+def unlike_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    rating = Rating.query.filter_by(user_id=current_user.id, post_id=post_id).first()
+    if rating:
+        db.session.delete(rating)
+        db.session.commit()
+    
+    # Auf der gleichen Seite bleiben
+    return redirect(request.referrer or url_for('main.index'))
+
+@bp.route('/delete_post/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    
+    # Prüfen, ob der aktuelle Benutzer der Autor ist
+    if post.author != current_user:
+        abort(403)  # Zugriff verbieten, wenn nicht der Autor
+    
+    # Post löschen
+    db.session.delete(post)
+    db.session.commit()
+    
+    flash('Dein Post wurde gelöscht.')
+    return redirect(url_for('main.index'))

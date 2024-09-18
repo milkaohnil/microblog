@@ -283,6 +283,24 @@ class User(PaginatedAPIMixin, UserMixin, db.Model):
 def load_user(id):
     return db.session.get(User, int(id))
 
+class Rating(db.Model):
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id', ondelete='CASCADE'), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+
+    @staticmethod
+    def like_post(user, post):
+        if not Rating.query.filter_by(user_id=user.id, post_id=post.id).first():
+            rating = Rating(user_id=user.id, post_id=post.id)
+            db.session.add(rating)
+            db.session.commit()
+
+    @staticmethod
+    def unlike_post(user, post):
+        rating = Rating.query.filter_by(user_id=user.id, post_id=post.id).first()
+        if rating:
+            db.session.delete(rating)
+            db.session.commit()
 
 class Post(SearchableMixin, db.Model):
     __searchable__ = ['body']
@@ -293,8 +311,37 @@ class Post(SearchableMixin, db.Model):
     user_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey(User.id),
                                                index=True)
     language: so.Mapped[Optional[str]] = so.mapped_column(sa.String(5))
-
+    ratings = db.relationship('Rating', lazy='dynamic', backref='post', cascade='all, delete-orphan')
     author: so.Mapped[User] = so.relationship(back_populates='posts')
+
+    def to_dict(self, include_author=True):
+        data = {
+            'id': self.id,
+            'body': self.body,
+            'timestamp': self.timestamp.isoformat() + 'Z',
+            'user_id': self.user_id,
+            'language': self.language,
+            'like_count': self.like_count()
+        }
+        if include_author:
+            data['author'] = self.author.username
+        return data
+    
+    def is_liked_by(self, user):
+        return Rating.query.filter_by(user_id=user.id, post_id=self.id).count() > 0
+    
+    def like_count(self):
+        return self.ratings.count()
+    
+    def like(self, user):
+        if not self.is_liked_by(user):
+            like = Rating(user_id=user.id, post_id=self.id)
+            db.session.add(like)
+
+    def unlike(self, user):
+        like = Rating.query.filter_by(user_id=user.id, post_id=self.id).first()
+        if like:
+            db.session.delete(like)
 
     def __repr__(self):
         return '<Post {}>'.format(self.body)
