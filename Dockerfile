@@ -11,6 +11,7 @@ RUN chmod a+x boot.sh
 
 ENV FLASK_APP microblog.py
 RUN flask translate compile
+CMD ["/bin/bash","flask db migrate"]
 
 EXPOSE 5000
 ENTRYPOINT ["./boot.sh"]
